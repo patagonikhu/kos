@@ -8,6 +8,7 @@
 
 #include <kern/pmap.h>
 #include <kern/kclock.h>
+#include <kern/env.h>
 
 // These variables are set by i386_detect_memory()
 size_t npages;			// Amount of physical memory (in pages)
@@ -149,6 +150,7 @@ mem_init(void)
 	// Your code goes here:
 
 	pages = (struct Page*) boot_alloc(npages * sizeof(struct Page));
+	envs = (struct Env*) boot_alloc(NENV * sizeof(struct Env));
 	//////////////////////////////////////////////////////////////////////
 	// Now that we've allocated the initial kernel data structures, we set
 	// up the list of free physical pages. Once we've done so, all further
@@ -174,7 +176,9 @@ mem_init(void)
 
 	n = ROUNDUP(npages*sizeof(struct Page), PGSIZE);
 	boot_map_region(kern_pgdir,UPAGES , n, (physaddr_t)PADDR(pages), PTE_U);
-		//////////////////////////////////////////////////////////////////////
+	n = ROUNDUP(NENV*sizeof(struct Env), PGSIZE);
+	boot_map_region(kern_pgdir,UENVS , n, (physaddr_t)PADDR(envs), PTE_U);
+	//////////////////////////////////////////////////////////////////////
 	// Use the physical memory that 'bootstack' refers to as the kernel
 	// stack.  The kernel stack grows down from virtual address KSTACKTOP.
 	// We consider the entire range from [KSTACKTOP-PTSIZE, KSTACKTOP)
@@ -196,7 +200,7 @@ mem_init(void)
 	// Permissions: kernel RW, user NONE
 	// Your code goes here:
 
-	boot_map_region(kern_pgdir,KERNBASE , 0x10000000, 0, PTE_W);
+	boot_map_region(kern_pgdir,KERNBASE , 0x10000000UL, 0, PTE_W);
 	// Check that the initial page directory has been set up correctly.
 	check_kern_pgdir();
 
@@ -406,10 +410,10 @@ boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm
 	for(i = 0;i < size;i+=PGSIZE)
 	{
 		pte = pgdir_walk(pgdir,(const void*)(va + i),1);
+		kern_pgdir[PDX(va+i)] = (kern_pgdir[PDX(va+i)] &0xFFFFF000)|perm|PTE_P;
 		*pte = ((pa+i)&0xFFFFF000)|perm|PTE_P;
 		//pgdir[PDX(va+i)]
 	}
-	kern_pgdir[PDX(va)] = (kern_pgdir[PDX(va)] &0xFFFFF000)|perm|PTE_P;
 }
 
 //
@@ -714,12 +718,12 @@ check_kern_pgdir(void)
 		case PDX(UVPT):
 		case PDX(KSTACKTOP-1):
 		case PDX(UPAGES):
+		case PDX(UENVS):
 			assert(pgdir[i] & PTE_P);
 			break;
 		default:
 			if (i >= PDX(KERNBASE)) {
 				assert(pgdir[i] & PTE_P);
-				cprintf("check_kern_pgdir i %u PDX(K) %u pgdir[i] %08x \n",i ,PDX(KERNBASE),pgdir[i]);
 				assert(pgdir[i] & PTE_W);
 			} else
 				assert(pgdir[i] == 0);

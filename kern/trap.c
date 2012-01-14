@@ -57,7 +57,16 @@ static const char *trapname(int trapno)
 		return "System call";
 	return "(unknown trap)";
 }
+extern void divid_handler(void);
+extern void system_handler(void);
+static void idt_install(void)
+{
 
+	SETGATE(idt[T_DIVIDE], 0, GD_KT, (int)divid_handler, 3);			 
+	SETGATE(idt[T_DIVIDE], 0, GD_KT, (int)divid_handler, 3);			 
+TRAPHANDLER_NOEC(debug_handler, T_DEBUG)	/*debug exception*/
+	SETGATE(idt[T_SYSCALL], 0, GD_KT ,(int)system_handler, 3);			 
+}
 
 void
 trap_init(void)
@@ -65,8 +74,8 @@ trap_init(void)
 	extern struct Segdesc gdt[];
 
 	// LAB 3: Your code here.
-
-	// Per-CPU setup 
+	idt_install();
+		// Per-CPU setup 
 	trap_init_percpu();
 }
 
