@@ -37,7 +37,8 @@ run () {
 		qemuextra="-S -gdb tcp::$gdbport"
 	fi
 
-	qemucommand="$qemu -nographic $qemuopts -serial file:jos.out -monitor null -no-reboot $qemuextra"
+	#qemucommand="$qemu -nographic $qemuopts -serial file:jos.out -monitor null -no-reboot $qemuextra"
+	qemucommand="$qemu -nographic $qemuopts -serial file:jos.out -monitor null -no-reboot"
 	if $verbose; then
 		echo $qemucommand 1>&2
 	fi
@@ -141,6 +142,7 @@ runtest () {
 		echo "$make $2... "
 	fi
 	$make $2 >$out
+	echo "runtest $make $2... "
 	if [ $? -ne 0 ]
 	then
 		rm -f obj/kern/init.o
