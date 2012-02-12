@@ -190,20 +190,24 @@ env_setup_vm(struct Env *e)
 	// UVPT maps the env's own page table read-only.
 	e->env_pgdir = (pte_t*)(KADDR(page2pa(p)));
 	p->pp_ref++;
+//	memmove(e->env_pgdir,kern_pgdir,PGSIZE);
 	for (i = 0; i < NPDENTRIES; i++) {
 		switch (i) {
 			case PDX(UVPT):
 				break;
 			default:
 				if (i >= PDX(UTOP)) {
-					e->env_pgdir[i] = PTE_ADDR(kern_pgdir[i]) | PTE_P|PTE_W ;
-				} else
+					//e->env_pgdir[i] = PTE_ADDR(kern_pgdir[i]) | PTE_P|PTE_W ;
+					e->env_pgdir[i] = kern_pgdir[i];
+				}else{
 					e->env_pgdir[i] = 0;
+				} 
 				break;
 		}
 	}
 	// Permissions: kernel R, user R
 	e->env_pgdir[PDX(UVPT)] = PADDR(e->env_pgdir) | PTE_P | PTE_W| PTE_U;
+//	e->env_pgdir[PDX(UENVS)] = PADDR(e->env_pgdir) | PTE_P | PTE_U;
 
 	return 0;
 }
@@ -383,7 +387,7 @@ load_icode(struct Env *e, uint8_t *binary, size_t size)
 			memmove((void*)ph->p_va,binary + ph->p_offset,ph->p_filesz);
 			if(ph->p_filesz < ph->p_memsz)
 			{
-		memset((void*)(ph->p_va + ph->p_filesz),0,ph->p_memsz - ph->p_filesz);
+				memset((void*)(ph->p_va + ph->p_filesz),0,ph->p_memsz - ph->p_filesz);
 			}
 		}
 	}
@@ -546,7 +550,6 @@ env_run(struct Env *e)
 	curenv->env_status = ENV_RUNNING;
 	curenv->env_runs++;
 	lcr3(PADDR(curenv->env_pgdir));
-	cprintf("6828 decimal is %o octal yyyyyy!\n", 6828);
 	env_pop_tf(&curenv->env_tf);
 }
 
