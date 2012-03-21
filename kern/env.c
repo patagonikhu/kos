@@ -99,7 +99,8 @@ envid2env(envid_t envid, struct Env **env_store, bool checkperm)
 	// If checkperm is set, the specified environment
 	// must be either the current environment
 	// or an immediate child of the current environment.
-	if (checkperm && e != curenv && e->env_parent_id != curenv->env_id) {
+	if (checkperm && e != curenv && e->env_parent_id != curenv->env_id) 
+	{
 		*env_store = 0;
 		return -E_BAD_ENV;
 	}
@@ -203,14 +204,13 @@ env_setup_vm(struct Env *e)
 					//e->env_pgdir[i] = PTE_ADDR(kern_pgdir[i]) | PTE_P|PTE_W ;
 					e->env_pgdir[i] = kern_pgdir[i];
 				}else{
-					e->env_pgdir[i] = 0;
+//					e->env_pgdir[i] = 0;
 				} 
 				break;
 		}
 	}
 	// Permissions: kernel R, user R
-	e->env_pgdir[PDX(UVPT)] = PADDR(e->env_pgdir) | PTE_P | PTE_W| PTE_U;
-//	e->env_pgdir[PDX(UENVS)] = PADDR(e->env_pgdir) | PTE_P | PTE_U;
+	e->env_pgdir[PDX(UVPT)] = PADDR(e->env_pgdir) | PTE_P | PTE_U;
 
 	return 0;
 }
@@ -272,7 +272,9 @@ env_alloc(struct Env **newenv_store, envid_t parent_id)
 
 	// Enable interrupts while in user mode.
 	// LAB 4: Your code here.
+	e->env_tf.tf_eflags |= FL_IF; 
 
+	//write_eflags(eflags);
 	// Clear the page fault handler until user installs one.
 	e->env_pgfault_upcall = 0;
 
@@ -312,17 +314,17 @@ region_alloc(struct Env *e, void *va, size_t len)
 	{
 		--len;
 	}
+	int r;
 	for(i = 0;i <= len;i += PGSIZE)
 	{
-		pte =  pgdir_walk(e->env_pgdir, ROUNDDOWN((va+i),PGSIZE), 1);
-		if(!pte)
-			panic("region_alloc pte fail.");
+		//pte =  pgdir_walk(e->env_pgdir, ROUNDDOWN((va+i),PGSIZE), 1);
 
 		if (!(pp = page_alloc(ALLOC_ZERO)))
 			panic("region_alloc page_alloc fail.");
-		*pte = page2pa(pp)|PTE_U|PTE_P|PTE_W;
-		e->env_pgdir[PDX(va+i)] =  PTE_ADDR(e->env_pgdir[PDX(va+i)]) | PTE_U |PTE_W | PTE_P;
-		//page_insert(pde_t *pgdir, struct Page *pp, void *va, int perm)
+///		e->env_pgdir[PDX(va+i)] =  PTE_ADDR(e->env_pgdir[PDX(va+i)]) | PTE_U |PTE_W | PTE_P;
+		r = page_insert(e->env_pgdir, pp, ROUNDDOWN((va+i),PGSIZE),PTE_U |PTE_W | PTE_P);
+		if (r < 0)
+			panic("region_alloc page_insert fail.");
 	}
 }
 
@@ -406,8 +408,8 @@ load_icode(struct Env *e, uint8_t *binary, size_t size)
 	lcr3(PADDR(kern_pgdir));
 	e->env_tf.tf_eip = elf->e_entry;
 	e->env_tf.tf_esp = USTACKTOP;
-	cprintf("tf_eip %08x\n", e->env_tf.tf_eip);
-	cprintf("tf_esp %08x\n", e->env_tf.tf_esp);
+	//cprintf("tf_eip %08x\n", e->env_tf.tf_eip);
+	//cprintf("tf_esp %08x\n", e->env_tf.tf_esp);
 	// Now map one page for the program's initial stack
 	// at virtual address USTACKTOP - PGSIZE.
 
@@ -432,6 +434,7 @@ env_create(uint8_t *binary, size_t size, enum EnvType type)
 		panic("env_alloc fail");
 	}
 	load_icode(e,binary, size);
+	e->env_type = type;
 
 }
 
@@ -576,6 +579,7 @@ env_run(struct Env *e)
 	curenv->env_status = ENV_RUNNING;
 	curenv->env_runs++;
 	lcr3(PADDR(curenv->env_pgdir));
+	unlock_kernel();
 	env_pop_tf(&curenv->env_tf);
 }
 

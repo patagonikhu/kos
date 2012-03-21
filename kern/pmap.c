@@ -176,9 +176,9 @@ mem_init(void)
 	//    - pages itself -- kernel RW, user NONE
 	// Your code goes here:
 
-	n = ROUNDUP(npages*sizeof(struct Page), PGSIZE);
-	boot_map_region(kern_pgdir,UPAGES , n, (physaddr_t)PADDR(pages), PTE_U);
-	n = ROUNDUP(NENV*sizeof(struct Env), PGSIZE);
+	n = ROUNDUP(npages*sizeof(struct Page), PTSIZE);
+	boot_map_region(kern_pgdir,UPAGES , n, (physaddr_t)PADDR(pages),PTE_P| PTE_U);
+	n = ROUNDUP(NENV*sizeof(struct Env), PTSIZE);
 	boot_map_region(kern_pgdir,UENVS , n, (physaddr_t)PADDR(envs), PTE_U|PTE_P);
 	//////////////////////////////////////////////////////////////////////
 	// Use the physical memory that 'bootstack' refers to as the kernel
@@ -201,14 +201,12 @@ mem_init(void)
 	// we just set up the mapping anyway.
 	// Permissions: kernel RW, user NONE
 	// Your code goes here:
+	boot_map_region(kern_pgdir, KERNBASE , -KERNBASE, 0, PTE_P|PTE_W);
 
-<<<<<<< HEAD
 	// Initialize the SMP-related parts of the memory map
 	mem_init_mp();
 
-=======
-	boot_map_region(kern_pgdir,KERNBASE , 0x10000000UL, 0, PTE_W);
->>>>>>> lab3
+//	boot_map_region(kern_pgdir,KERNBASE , 0x10000000UL, 0, PTE_W);
 	// Check that the initial page directory has been set up correctly.
 	check_kern_pgdir();
 
@@ -262,6 +260,13 @@ mem_init_mp(void)
 	//     Permissions: kernel RW, user NONE
 	//
 	// LAB 4: Your code here:
+	int i,kstacktop_i;
+	for(i = 0; i < NCPU;i++)
+	{
+		kstacktop_i = KSTACKTOP - i * (KSTKSIZE + KSTKGAP),
+
+		boot_map_region(kern_pgdir, kstacktop_i - KSTKSIZE, KSTKSIZE,PADDR(percpu_kstacks[i]), PTE_W);
+	}
 
 }
 
@@ -299,7 +304,12 @@ page_init(void)
 		{
 			uint32_t addr;
 			addr = (uint32_t)page2pa(&pages[i]);
-			if((addr >= PGSIZE && addr < npages_basemem * PGSIZE)||
+			if(addr == MPENTRY_PADDR)
+			{
+				pages[i].pp_ref = 1;
+				
+			}
+			else if((addr >= PGSIZE && addr < npages_basemem * PGSIZE)||
 					(addr> EXTPHYSMEM && addr < (uint32_t)_start)||
 					(addr >= (uint32_t)(PADDR(boot_alloc(0)))&& addr < npages*PGSIZE))
 			{
@@ -426,7 +436,9 @@ pgdir_walk(pde_t *pgdir, const void *va, int create)
 		}
 		page->pp_ref = 1;
 		memset((void*)page2kva(page),0,PGSIZE);
-		*pgdir = page2pa(page) | PTE_P;
+		uint32_t perm;
+		perm = (*pgdir) & 0x00000fff;
+		*pgdir = page2pa(page)| PTE_P | perm |PTE_U |PTE_W;
 	}
 	p = (pte_t*)KADDR(PTE_ADDR(*pgdir));
 	//	if (!(p[PTX(va)] & PTE_P))
@@ -486,21 +498,28 @@ boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm
 int
 page_insert(pde_t *pgdir, struct Page *pp, void *va, int perm)
 {
-	pde_t *pde;
-	pde = pgdir_walk(pgdir,va,1);
-	if(!pde)
-	{
-		return -E_NO_MEM;
-	}
-	pp->pp_ref++;
-	if ((*pde & PTE_P))
-	{
-		page_remove(pgdir,va);
-	}
-	*pde = page2pa(pp)|perm|PTE_P;
-	pgdir[PDX(va)] = PTE_ADDR(pgdir[PDX(va)]) | perm|PTE_P; 
 	// Fill this function in
+	pte_t *ppte = pgdir_walk(pgdir,va,1);
+	if(ppte == NULL)
+		return -E_NO_MEM;
+	//if(curenv)
+	//cprintf("page ins %08x %08x %08x %08x\n",curenv->env_id,va,*ppte,page2pa(pp));
+	if(((*ppte) & PTE_P) != 0){
+		if(PTE_ADDR(*ppte) != page2pa(pp)){
+			page_remove(pgdir,va);
+		}else{
+			pp->pp_ref--;
+		}
+	}
+	*ppte = page2pa(pp) | perm | PTE_P;
+	pp->pp_ref ++;
+	uint32_t _perm;
+	_perm = pgdir[PDX(va)] & 0x00000fff;
+	pgdir[PDX(va)] = PTE_ADDR(pgdir[PDX(va)]) | _perm | perm|PTE_P; 
+	tlb_invalidate(pgdir,va);
 	return 0;
+
+
 }
 
 //
@@ -752,6 +771,7 @@ check_kern_pgdir(void)
 	for (i = 0; i < npages * PGSIZE; i += PGSIZE)
 		assert(check_va2pa(pgdir, KERNBASE + i) == i);
 
+
 	// check IO mem (new in lab 4)
 	for (i = IOMEMBASE; i < -PGSIZE; i += PGSIZE)
 		assert(check_va2pa(pgdir, i) == i);
@@ -806,7 +826,7 @@ check_va2pa(pde_t *pgdir, uintptr_t va)
 	p = (pte_t*) KADDR(PTE_ADDR(*pgdir));
 	if (!(p[PTX(va)] & PTE_P))
 	{
-		cprintf("check_va2pa fail second\n");
+	//	cprintf("check_va2pa fail second\n");
 		return ~0;
 	}
 	return PTE_ADDR(p[PTX(va)]);
@@ -852,7 +872,6 @@ check_page(void)
 	page_free(pp0);
 	assert(page_insert(kern_pgdir, pp1, 0x0, PTE_W) == 0);
 	assert(PTE_ADDR(kern_pgdir[0]) == page2pa(pp0));
-	cprintf("assert page2pa(pp1) %08x\n",page2pa(pp1));
 	assert(check_va2pa(kern_pgdir, 0x0) == page2pa(pp1));
 	assert(pp1->pp_ref == 1);
 	assert(pp0->pp_ref == 1);
@@ -1030,7 +1049,6 @@ user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 	uint32_t i;
 	void * va_down = (void *)ROUNDDOWN(va, PGSIZE);
 	size_t len_up = ROUNDUP(len, PGSIZE);
-	cprintf("user_mem_check xxxx 0x%08x,0x%08x\n",va,len);
 	for (i = 0; i < len_up / PGSIZE; i++) {
 		if (va_down + i * PGSIZE > (void *)ULIM) {
 			return -E_FAULT;
@@ -1044,21 +1062,17 @@ user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 		}
 		pte_t * pte = pgdir_walk(env->env_pgdir, va_down + i * PGSIZE, 0);
 		if (pte == NULL) {
-		//user_mem_check_addr = (uintptr_t)(ROUNDDOWN(va + i * PGSIZE,PGSIZE));
 			return -E_FAULT;
 		}
 		if (!((*pte) & PTE_P)) {
-			//user_mem_check_addr = (uintptr_t)(va + i * PGSIZE);
 			return -E_FAULT;
 		}
 		// try to access with perm PTE_U but pte is kernel mode
 		if (!(perm & PTE_U) && ((*pte) & PTE_U)) {
-			//user_mem_check_addr = (uintptr_t)(va + i * PGSIZE);
 			return -E_FAULT;
 		}
 		// try to access with perm PTE_W but pte is not writable
 		if ((perm & PTE_W) && !((*pte) & PTE_W)) {
-			//user_mem_check_addr = (uintptr_t)(va + i * PGSIZE);
 			return -E_FAULT;
 		}
 	}
@@ -1074,9 +1088,10 @@ user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 void
 user_mem_assert(struct Env *env, const void *va, size_t len, int perm)
 {
-	if (user_mem_check(env, va, len, perm | PTE_U) < 0) {
+	int t;
+	if ((t = user_mem_check(env, va, len, perm | PTE_U)) < 0) {
 		cprintf("[%08x] user_mem_check assertion failure for "
-			"va %08x\n", curenv->env_id, user_mem_check_addr);
+			"va %08x error code %d\n", curenv->env_id, user_mem_check_addr,t);
 		env_destroy(env);	// may not return
 	}
 }
