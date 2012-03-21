@@ -26,6 +26,7 @@ runtest1 softint \
 	'Welcome to the JOS kernel monitor!' \
 	'Incoming TRAP frame at 0xefbfffbc' \
 	'TRAP frame at 0xf.......' \
+	'TRAP frame at 0xf.......' \
 	'  trap 0x0000000d General Protection' \
 	'  eip  0x008.....' \
 	'  ss   0x----0023' \
