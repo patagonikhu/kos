@@ -96,7 +96,6 @@ spawn(const char *prog, const char **argv)
 		cprintf("elf magic %08x want %08x\n", elf->e_magic, ELF_MAGIC);
 		return -E_NOT_EXEC;
 	}
-
 	// Create new child environment
 	if ((r = sys_exofork()) < 0)
 		return r;

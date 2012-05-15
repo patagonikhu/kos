@@ -61,7 +61,18 @@ alloc_block(void)
 	// super->s_nblocks blocks in the disk altogether.
 
 	// LAB 5: Your code here.
-	panic("alloc_block not implemented");
+//	panic("alloc_block not implemented");
+	int i,j,k;
+	for(i = 3 ; i < super->s_nblocks;i++)
+	{
+		if(bitmap[i/32] & (1<<(i % 32)))
+		{
+			bitmap[i / 32] &= ~(1<<(i % 32));
+			flush_block(diskaddr(2 + i / BLKBITSIZE));
+			return i; 
+
+		}	
+	}
 	return -E_NO_DISK;
 }
 
@@ -132,7 +143,36 @@ static int
 file_block_walk(struct File *f, uint32_t filebno, uint32_t **ppdiskbno, bool alloc)
 {
 	// LAB 5: Your code here.
-	panic("file_block_walk not implemented");
+	int r;
+	uint32_t *ptr;
+	void *blk;
+
+	if(filebno < NDIRECT){
+		ptr = &f->f_direct[filebno];
+	//	cprintf("1\n");
+	}else if(filebno < NINDIRECT + NDIRECT){
+		if(f->f_indirect == 0){
+	//		cprintf("2\n");
+			if(alloc == 0)
+				return -E_NOT_FOUND;
+			if((r = alloc_block()) < 0)
+				return r;
+	//		cprintf("3\n");
+			f->f_indirect = r;
+		}else{
+			alloc = 0;
+		}
+		blk = diskaddr(f->f_indirect);
+		if(alloc)
+			memset(blk,0,BLKSIZE);
+			//cprintf("4\n");
+		ptr = (uint32_t*)blk + filebno - NDIRECT;
+	}else{
+		return -E_INVAL;
+	//	cprintf("4\n");
+	}
+	*ppdiskbno = ptr;
+	return 0;
 }
 
 // Set *blk to the address in memory where the filebno'th
@@ -148,7 +188,20 @@ int
 file_get_block(struct File *f, uint32_t filebno, char **blk)
 {
 	// LAB 5: Your code here.
-	panic("file_get_block not implemented");
+	int r;
+	uint32_t *ppdiskbno;
+	r = file_block_walk(f,filebno, &ppdiskbno,1);
+	if(r < 0)
+		return r;
+	//cprintf("file_get_block %d\n",*ppdiskbno);
+	if(*ppdiskbno == 0){
+		if((r = alloc_block()) < 0)
+			return r;
+		*ppdiskbno = r;
+	}
+	//cprintf("file_get_block 0x%08x\n",ppdiskbno);
+	*blk = diskaddr(*ppdiskbno);
+	return 0;
 }
 
 // Try to find a file named "name" in dir.  If so, set *file to it.
@@ -170,13 +223,17 @@ dir_lookup(struct File *dir, const char *name, struct File **file)
 	nblock = dir->f_size / BLKSIZE;
 	for (i = 0; i < nblock; i++) {
 		if ((r = file_get_block(dir, i, &blk)) < 0)
+		{
 			return r;
+		}
 		f = (struct File*) blk;
 		for (j = 0; j < BLKFILES; j++)
+		{
 			if (strcmp(f[j].f_name, name) == 0) {
 				*file = &f[j];
 				return 0;
 			}
+		}
 	}
 	return -E_NOT_FOUND;
 }

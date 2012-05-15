@@ -84,6 +84,7 @@ PERL	:= perl
 CFLAGS := $(CFLAGS) $(DEFS) $(LABDEFS) -O1 -fno-builtin -I$(TOP) -MD
 CFLAGS += -fno-omit-frame-pointer
 CFLAGS += -Wall -Wno-format -Wno-unused -Werror -gstabs -m32
+#CFLAGS += -Wall -Wno-format -Wno-unused -Werror -gstabs -m32
 
 CFLAGS += -I$(TOP)/net/lwip/include \
 	  -I$(TOP)/net/lwip/include/ipv4 \
