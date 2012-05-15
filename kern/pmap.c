@@ -439,6 +439,8 @@ pgdir_walk(pde_t *pgdir, const void *va, int create)
 		uint32_t perm;
 		perm = (*pgdir) & 0x00000fff;
 		*pgdir = page2pa(page)| PTE_P | perm |PTE_U |PTE_W;
+		if (PGNUM(PTE_ADDR(*pgdir)) >= npages)
+			cprintf("KADDR called with invalid pa %08lx %08x %08x", page2pa(page),perm);
 	}
 	p = (pte_t*)KADDR(PTE_ADDR(*pgdir));
 	//	if (!(p[PTX(va)] & PTE_P))
@@ -502,8 +504,6 @@ page_insert(pde_t *pgdir, struct Page *pp, void *va, int perm)
 	pte_t *ppte = pgdir_walk(pgdir,va,1);
 	if(ppte == NULL)
 		return -E_NO_MEM;
-	//if(curenv)
-	//cprintf("page ins %08x %08x %08x %08x\n",curenv->env_id,va,*ppte,page2pa(pp));
 	if(((*ppte) & PTE_P) != 0){
 		if(PTE_ADDR(*ppte) != page2pa(pp)){
 			page_remove(pgdir,va);
@@ -514,8 +514,8 @@ page_insert(pde_t *pgdir, struct Page *pp, void *va, int perm)
 	*ppte = page2pa(pp) | perm | PTE_P;
 	pp->pp_ref ++;
 	uint32_t _perm;
-	_perm = pgdir[PDX(va)] & 0x00000fff;
-	pgdir[PDX(va)] = PTE_ADDR(pgdir[PDX(va)]) | _perm | perm|PTE_P; 
+	_perm = (pgdir[PDX(va)] | perm) & 0x00000fff;
+	pgdir[PDX(va)] = PTE_ADDR(pgdir[PDX(va)]) | _perm |PTE_P; 
 	tlb_invalidate(pgdir,va);
 	return 0;
 

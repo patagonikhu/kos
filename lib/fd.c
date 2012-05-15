@@ -215,6 +215,7 @@ read(int fdnum, void *buf, size_t n)
 	if (!dev->dev_read)
 		return -E_NOT_SUPP;
 	return (*dev->dev_read)(fd, buf, n);
+
 }
 
 ssize_t

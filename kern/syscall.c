@@ -92,7 +92,7 @@ sys_exofork(void)
 		newenv_store->env_tf.tf_regs.reg_eax = 0;
 		return newenv_store->env_id;
 	}
-	panic("sys_exofork not implemented");
+	return -1;
 }
 
 // Set envid's env_status to status, which must be ENV_RUNNABLE
@@ -140,7 +140,19 @@ sys_env_set_trapframe(envid_t envid, struct Trapframe *tf)
 	// LAB 5: Your code here.
 	// Remember to check whether the user has supplied us with a good
 	// address!
-	panic("sys_env_set_trapframe not implemented");
+	struct Env *e;
+	int r;
+	if((r = envid2env(envid, &e, 1) < 0))
+	{
+		return -E_BAD_ENV;
+	}
+	e->env_tf = *tf;
+	e->env_tf.tf_eflags |= FL_IF;
+	e->env_tf.tf_cs |= 3;
+	e->env_tf.tf_ds |= 3;
+	e->env_tf.tf_es |= 3;
+	e->env_tf.tf_ss |= 3;
+	return 0;
 }
 
 // Set the page fault upcall for 'envid' by modifying the corresponding struct
@@ -358,7 +370,36 @@ static int
 sys_ipc_try_send(envid_t envid, uint32_t value, void *srcva, unsigned perm)
 {
 	// LAB 4: Your code here.
-	panic("sys_ipc_try_send not implemented");
+	struct Env * env;
+	struct Page * page = NULL;
+	int r;
+	if ((r = envid2env(envid, &env, 0)) < 0)
+		return -E_BAD_ENV;
+	if (env->env_ipc_recving == 0)
+		return -E_IPC_NOT_RECV;
+	if (srcva < (void *)UTOP) {
+		if (PGOFF(srcva) != 0)
+			return -E_INVAL;
+		if ((perm & PTE_U) == 0 || 
+			(perm & PTE_P) == 0 ||
+			(perm & ~PTE_U & ~PTE_P & ~PTE_W & PTE_AVAIL) != 0)
+			return -E_INVAL;
+		if ((page = page_lookup(curenv->env_pgdir, srcva, NULL)) == NULL)
+			return -E_INVAL;
+	}
+	env->env_ipc_recving = 0;
+	env->env_ipc_from = curenv->env_id;
+	env->env_ipc_value = value;
+	if (srcva >= (void *)UTOP)
+		env->env_ipc_perm = 0;
+	if (srcva < (void *)UTOP && env->env_ipc_dstva < (void *)UTOP) {
+		if ((r = page_insert(env->env_pgdir, page, env->env_ipc_dstva, perm)) < 0)
+			return -E_NO_MEM;
+		env->env_ipc_perm = perm;
+	}
+	env->env_status = ENV_RUNNABLE;
+	return 0;
+
 }
 
 // Block until a value is ready.  Record that you want to receive
@@ -376,7 +417,13 @@ static int
 sys_ipc_recv(void *dstva)
 {
 	// LAB 4: Your code here.
-	panic("sys_ipc_recv not implemented");
+	if (PGOFF(dstva) != 0)
+		return -E_INVAL;
+	curenv->env_ipc_recving = 1;
+	curenv->env_ipc_dstva = dstva;
+	curenv->env_status = ENV_NOT_RUNNABLE;
+	curenv->env_tf.tf_regs.reg_eax = 0;
+	sched_yield();
 	return 0;
 }
 
@@ -417,6 +464,16 @@ syscall(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
 			break;
 	case SYS_env_set_pgfault_upcall: 
 			retV = sys_env_set_pgfault_upcall((envid_t)a1, (void *)a2);
+			break;
+	case SYS_ipc_try_send:
+			retV = sys_ipc_try_send((envid_t)a1, (uint32_t)a2, (void *)a3, (unsigned)a4);
+			break;
+	case SYS_ipc_recv:
+			retV = sys_ipc_recv((void *)a1);
+			break;
+
+	case SYS_env_set_trapframe:
+			retV = sys_env_set_trapframe((envid_t)a1, (struct Trapframe*)a2);
 			break;
 	case NSYSCALLS:
 			break;

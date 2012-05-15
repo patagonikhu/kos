@@ -9,7 +9,7 @@
 #include "fs.h"
 
 
-#define debug 0
+#define debug 0 
 
 // The file system server maintains three structures
 // for each open file.
@@ -137,7 +137,7 @@ serve_open(envid_t envid, struct Fsreq_open *req,
 try_open:
 		if ((r = file_open(path, &f)) < 0) {
 			if (debug)
-				cprintf("file_open failed: %e", r);
+				cprintf("file_open failed: %e\n", r);
 			return r;
 		}
 	}
@@ -215,7 +215,17 @@ serve_read(envid_t envid, union Fsipc *ipc)
 	// Hint: Use file_read.
 	// Hint: The seek position is stored in the struct Fd.
 	// LAB 5: Your code here
-	panic("serve_read not implemented");
+	struct OpenFile *o;
+	int bn,r;
+	bn = MIN(req->req_n,PGSIZE);
+	if ((r = openfile_lookup(envid, req->req_fileid, &o)) < 0)
+		return r;
+	if(( r = file_read(o->o_file,ret->ret_buf,bn,o->o_fd->fd_offset)) < 0)
+		return r;
+	o->o_fd->fd_offset += r;
+	ret->ret_buf[r] = '\0';
+		
+	return r;
 }
 
 // Write req->req_n bytes from req->req_buf to req_fileid, starting at
@@ -229,7 +239,21 @@ serve_write(envid_t envid, struct Fsreq_write *req)
 		cprintf("serve_write %08x %08x %08x\n", envid, req->req_fileid, req->req_n);
 
 	// LAB 5: Your code here.
-	panic("serve_write not implemented");
+	
+	struct OpenFile *o;
+	int r;
+	if ((r = openfile_lookup(envid, req->req_fileid, &o)) < 0)
+		return r;
+	if((r = file_write(o->o_file,req->req_buf,req->req_n,o->o_fd->fd_offset)) < 0)
+		return r;
+		char buff[512];
+	if(( r = file_read(o->o_file,buff,512,0)) < 0)
+		return r;
+	o->o_fd->fd_offset += r; 
+	if(o->o_fd->fd_offset > o->o_file->f_size){
+		file_set_size(o->o_file, o->o_fd->fd_offset);
+	}
+	return r;
 }
 
 // Stat ipc->stat.req_fileid.  Return the file's struct Stat to the
